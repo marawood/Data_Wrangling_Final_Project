@@ -1,0 +1,255 @@
+---
+title: "Final Report on Animal Ownership and Abandonment in the United States"
+author: "Mara Wood"
+date: "December 16, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r set_lib, echo = FALSE}
+library(tidyverse)
+library(downloader)
+library(stringr)
+library(rvest)
+library(httr)
+library(curl)
+library(jsonlite)
+library(XML)
+library(knitr)
+library(lubridate)
+```
+
+#**Introduction: Why Animal Data? A Personal Note**
+  Given the chance to do a project on any topic, one could probably look questioningly on my decision to conduct an analysis of the pet indsutry and animal shelter data.  However, this issue is near to my heart as an animal lover and a pet-parent of three rescue animals who have changed my life, and this has motivated my analysis for this project.  Growing up, I was always told to do what you love and love what you do, and  hopefully my love for animals will show through in my work here. 
+
+#**Cleaning the Data**
+
+###**Animal Shelter Statistics**
+My first source was a collection of animal shelter statistics, and was very easy to scrape into R since it was already in a nicely formatted HTML table and once I read it in, all I had to do was make it into a data frame and remove a row of NA values.  This was the easiest source I had, and I wish all webscraping could go as smoothly.  
+    
+```{r read_data_1, echo = FALSE}
+#Reading and cleaning first data source
+url_stat_brain <- "http://www.statisticbrain.com/animal-shelter-statistics/"
+stats_1 <- url_stat_brain %>% read_html() %>% html_nodes("table") %>% .[1] %>%
+  html_table(fill= TRUE)
+stats_1 <- as.data.frame(stats_1)
+stats_1 <- stats_1[-1, ]
+```
+
+###**Pet Ownership Statistics Data**
+My second source, information on US pet ownership statistics from the American Veterinary Medical Association, did not import nearly as smoothly.  It required a great deal of modification, including selecting out certain rows and columns, renaming columns, converting columns to numerics, and removing unnecessary symbols and punctuation.  
+```{r read_data_3, echo = FALSE}
+avma_url <- "https://www.avma.org/KB/Resources/Statistics/Pages/Market-research-statistics-US-pet-ownership.aspx"
+avma_stats_1 <- avma_url %>% read_html() %>% html_nodes("table") %>% .[2] %>%  html_table(fill= TRUE)
+avma_stats_1 <- as.data.frame(avma_stats_1)
+avma_stats_1 <- dplyr::select(avma_stats_1, X1, X2, X3, X4, X5)
+avma_stats_1 <- avma_stats_1[9:16, ]
+colnames(avma_stats_1) <- avma_stats_1[1, ]
+avma_stats_1 <- avma_stats_1[-1, ]
+avma_stats_2<- t(avma_stats_1)
+avma_stats_2 <- as.data.frame(avma_stats_2, stringsAsFactors = FALSE)
+avma_stats_2 <- rownames_to_column(avma_stats_2, var = "rowname")
+colnames(avma_stats_2)[1:8] <- c("Species", "Per_House_Own", "Num_House_Own", "Avg_Num_Per_House", "Total_US", "Avg_Vet_Visits_House_Year", "Avg_Vet_Dol_Per_House", "Avg_Vet_Dol_Per_Pet")
+avma_stats_2 <- avma_stats_2[-1, ]
+avma_stats_2$Per_House_Own <- str_replace_all(avma_stats_2$Per_House_Own, "%", "")
+avma_stats_2$Num_House_Own <- str_replace_all(avma_stats_2$Num_House_Own, ",", "")
+avma_stats_2$Total_US <- str_replace_all(avma_stats_2$Total_US, ",", "")
+avma_stats_2$Avg_Vet_Dol_Per_House <- str_replace_all(avma_stats_2$Avg_Vet_Dol_Per_House, "[$]", "")
+avma_stats_2$Avg_Vet_Dol_Per_Pet <- str_replace_all(avma_stats_2$Avg_Vet_Dol_Per_Pet, "[$]", "")
+avma_stats_2$Per_House_Own <- as.numeric(avma_stats_2$Per_House_Own)
+avma_stats_2$Num_House_Own <- as.numeric(avma_stats_2$Num_House_Own)
+avma_stats_2$Avg_Num_Per_House <- as.numeric(avma_stats_2$Avg_Num_Per_House)
+avma_stats_2$Total_US <- as.numeric(avma_stats_2$Total_US)
+avma_stats_2$Avg_Vet_Visits_House_Year <- as.numeric(avma_stats_2$Avg_Vet_Visits_House_Year)
+avma_stats_2$Avg_Vet_Dol_Per_House <- as.numeric(avma_stats_2$Avg_Vet_Dol_Per_House)
+avma_stats_2$Avg_Vet_Dol_Per_Pet <- as.numeric(avma_stats_2$Avg_Vet_Dol_Per_Pet)
+```
+    
+###**Pet Industry Data**
+Pet industry data from the American Pet Products Association was also more time consuming and difficult to scrape. First, it took a significant amount of time to locate the correct node that was containing the data that I wanted to use.  Additionally, once the data was pulled into R, it all entered into one column, so I had to make extensive use of the separate function in order to have the data broken up by year.  After this separation was complete, the data was still not tidy, so I needed to make use of the gather function to tidy the data, and make the necessary columns into numerics. 
+
+```{r read_data_4}
+pet_indust_url <- read_html("http://www.americanpetproducts.org/press_industrytrends.asp")
+pet_indust_stat <- pet_indust_url %>% html_nodes("p:nth-child(8)") %>% html_text() 
+pet_indust_stat <- as.data.frame(pet_indust_stat, stringsAsFactors = FALSE)
+colnames(pet_indust_stat)[1] <- c("one")
+pet_indust_stat <- tidyr::separate(pet_indust_stat, one, c("year", "dol_amount", "dol_amount2", "dol_amount3", "dol_amount4", "dol_amount5", "dol_amount6",  "dol_amount7", "dol_amount8", "dol_amount9", "dol_amount10", "dol_amount11", "dol_amount12", "dol_amount13", "dol_amount14", "dol_amount15", "dol_amount16", "dol_amount17"), sep = "[$]")
+pet_indust_stat <- tidyr::separate(pet_indust_stat, dol_amount, c("dol_amount", "year2"), sep = 5)
+pet_indust_stat <- tidyr::separate(pet_indust_stat, dol_amount2, c("dol_amount2", "year3"), sep = 5)
+pet_indust_stat <- tidyr::separate(pet_indust_stat, dol_amount3, c("dol_amount3", "year4"), sep = 5)
+pet_indust_stat <- tidyr::separate(pet_indust_stat, dol_amount4, c("dol_amount4", "year5"), sep = 5)
+pet_indust_stat <- tidyr::separate(pet_indust_stat, dol_amount5, c("dol_amount5", "year6"), sep = 5)
+pet_indust_stat <- tidyr::separate(pet_indust_stat, dol_amount6, c("dol_amount6", "year7"), sep = 5)
+pet_indust_stat <- dplyr::select(pet_indust_stat, -dol_amount8, -dol_amount9, -dol_amount10, -dol_amount11, -dol_amount12, -dol_amount13, -dol_amount14, -dol_amount15, -dol_amount16, -dol_amount17)
+pet_indust_stat$dol_amount7 <- substr(pet_indust_stat$dol_amount7, 1, 4)
+colnames(pet_indust_stat)[1:14] <- c("no", "2014", "no2", "2013", "no3", "2012", "no4", "2011", "no5", "2010", "no6", "2009", "no7", "2008")
+pet_indust_stat <- dplyr::select(pet_indust_stat, 2, 4, 6, 8, 10, 12, 14)
+pet_indust_stat <- pet_indust_stat[1,]
+pet_indust_stat <- gather(pet_indust_stat, `2008`:`2014`, key = "Year", value = "Dollars")
+pet_indust_stat$Dollars <- as.numeric(pet_indust_stat$Dollars)
+pet_indust_stat$Year <- as.numeric(pet_indust_stat$Year)
+```
+
+###**Animal Shelter Intake Data from LA and Austin**
+Much to my suprise, it was very difficult to find national data regarding animal shelter intakes.  I was able to find some high level statistics, but was not able to find detailed data at a national level.  City level data was the most in-depth data I was able to locate, and I found it for two cities in particular: Austin and Los Angeles.   This intake data came in the form of JSON files for both, and I was able to scrape the data and bring it into R using the JSONlite library.  Once I brought the Austin data in, I had to select the columns I needed and rename them appropriately. Aditionally, the gender column wasn't consistent with how gender was listed, so I had to make that uniform, and I had to make an age column since the animals' ages had been broken up into three different columns by year, month, and day.  For the Los Angeles data, I had to select out the columns that I needed, rename the columns, and reformat the date column using lubridate.
+```{r read_data_5}
+austin_url <- "https://data.austintexas.gov/api/views/wrwk-skv6/rows.json?accessType=DOWNLOAD"
+austin_data <- fromJSON(austin_url)[["data"]]
+austin_data <- as.data.frame(austin_data, stringsAsFactors = FALSE)
+austin_data <- austin_data %>% dplyr::select(-V1, -V3, -V4, -V5, -V6, -V7, -V8, -V9)
+colnames(austin_data)[1:11] <- c("ID", "Reason", "Reason2", "Species", "Gender", "Year", "Months", "Days", "Status", "Breed", "Color")
+austin_data$Gender[austin_data$Gender == "S"] <- "F" 
+austin_data$Gender[austin_data$Gender == "N"] <- "M" 
+austin_data$Year <- as.numeric(austin_data$Year)
+austin_data$Months <- as.numeric(austin_data$Months)
+austin_data$Days <- as.numeric(austin_data$Days)
+austin_data$Age <- (((austin_data$Year * 12) + austin_data$Months + (austin_data$Days/30))/12)
+```
+
+```{r read_data_6}
+LA_url <- "https://data.lacity.org/api/views/8cmr-fbcu/rows.json?accessType=DOWNLOAD"
+LA_data <- fromJSON(LA_url)[["data"]]
+LA_data <- as.data.frame(LA_data, stringsAsFactors = FALSE)
+LA_data <- LA_data %>% dplyr::select(-V1, -V2, -V3, -V4, -V5, -V6, -V7, -V8)
+colnames(LA_data)[1:9] <- c("Shelter", "ID", "Date", "Intake", "Condition", "Species", "Breed1", "Breed2", "Breed3")
+LA_data$Date <- substr(LA_data$Date, 1, 10)
+LA_data$Date <- ymd(LA_data$Date)
+LA_data$Year <- year(LA_data$Date)
+LA_Breed1_data <- summarize(group_by(LA_data, Breed1), count = n())
+LA_Breed2_data <- summarize(group_by(LA_data, Breed2), count = n())
+
+##Joining the two intake tables 
+shelter_data <- full_join(LA_data, austin_data, by = c("ID" = "ID", "Year" = "Year", "Intake" = "Reason", "Species" = "Species", "Breed2" = "Breed"))
+```
+
+#**Statistics**
+From my first source, I was able to create a nicely formatted table of statisics regarding animal shelters in 2016.
+```{r stat_table, echo = FALSE}
+kable(stats_1, format = 'html', caption = 'Overview of Animal Ownership Data in the US', row.names = FALSE, col.names = c("Animal Shelter Statistics", "2016 Facts"), align = c('l','r'), padding= 2)
+```
+<br>
+
+There are a few figures in particular I would like to point out from this table.  60% of dogs that enter into animal shelters will be euthanized, as well as 70% of cats.  This is unacceptable, especially considering that the majority of these animals are healthy and could be adopted.  Another statistic that is relevant here to the epidemic of shelter animals is that despite 70-90% of people claiming to spay or neuter their cats and dogs, only 10% of animals that end up in an animal shelter are actually spayed or neutered, indicating a large discrepancy between what people claim and what actual rates are.  This is not examined further in this report, but an entire study could easily be done on this alone.  
+
+##**The Pet Industry**
+
+The pet industry is growing every year, with over $60B spent in 2015, and is expected to continue to grow yearly (Humane Society of the United States).    
+
+```{r indus_graph, echo = FALSE}
+ggplot(data = pet_indust_stat, mapping = aes(Year, Dollars)) + geom_point() + geom_line() +
+ggtitle("U.S. Pet Industy Expenditures ($B)") +ylab("Dollars ($B)") + theme_bw() + theme(plot.title = element_text(hjust = 0.6))
+```
+
+People are spending extraordinary amount of money on their pets, and a great deal of this money is going into veterinary care for their pets. Statistics show that over 63% of people consider their pets to be family members, and just like for any other family members, many people will spare no expense when it comes to their pets' health and well-being (Humane Society of the United States).     
+
+##Veterniary Care/Spending by Species
+
+```{r Vet_graph, echo = FALSE}
+ggplot(data = avma_stats_2, mapping = aes(Avg_Vet_Visits_House_Year, Avg_Vet_Dol_Per_House, size = Avg_Num_Per_House, colour = Species)) + geom_point()  + theme(plot.subtitle = element_text(vjust = 1), 
+    plot.caption = element_text(vjust = 1), plot.title = element_text(hjust = 0.6)) +labs(size = "Avg # of Pets/House") +
+  xlab("Avg Vet Visits/House/Year")+ ylab("Avg $ Spent on Vet Care/Pet/Year") + ggtitle("Veterinary Care and Expense in the United States in 2012") + theme_dark() + scale_color_hue(l=90, c=95)
+```
+<br>
+Looking at this graph, we can see that horses and dogs cost the most amount of money each year at the vet, and that dogs visit the vet the most.  The size of the points on the graph indicates the average number of species per house.  At first I was suprised to see that the circle for horses was so large, but the next graph provides some further clarification into this.
+```{r Pet_graph, echo = FALSE}
+ggplot(data = avma_stats_2, mapping = aes(Num_House_Own, Total_US, color = Species, size = Per_House_Own)) + geom_point() +
+  labs(x = "Number of Households With Pets", y = "Total Pets in United States", size = "% of Houses Owning") + ggtitle("Pets in the United States in 2012 (by Species)") + scale_color_brewer(palette="Dark2") + theme(plot.title = element_text(hjust = 0.6))
+```
+<br>
+This phenomenon is further explored in this graph, where I look at the number of households with pets, the total number of pets in the United States, and what percentage of households own pets.  We can see that percentage wise, dogs and cats are close together, but overall there are more households with dogs in the United States, while there are more cats as pets overall, indicating that households with cats tend to have more cats than households with dogs tend to have multiple dogs. 
+Upon further investigation into the large size of the point of horses in the previous graph, we see here that it is a very small percentage of houses who own horses, and a small amount total in the United States.  However, often times those who own horses own large farms, and have a large amount of horses, which explains why the circle for horses in the previous graph is so large.  Even if less households overall own horses, the households that do are more likely to own more.
+
+```{r vet_graph2, echo = FALSE}
+ggplot(data = avma_stats_2, mapping = aes(x= Species, y= Avg_Vet_Dol_Per_Pet)) + geom_bar(stat = "identity") + ylab("Average Dollars Spent on Vet Care Per Pet") + ggtitle("Money Spent on Pet Vet Care by Species in 2012") + theme_classic() + geom_label(data = avma_stats_2, aes(label = Avg_Vet_Dol_Per_Pet)) + theme(plot.title = element_text(hjust = 0.6))
+```
+<br>
+Looking at average dollar spent yearly on vet care per pet, I am not suprised to see birds and cats low, but I was suprised to see the level of discrepancy between horses and dogs, as horses can be very expensive animals to take care of in terms of medical expenses.   
+
+#Animal Shelter Data
+
+The animal shelter intake data from Austin and Los Angeles allowed me to perform analysis regarding many different facets of animal abandonment, and provided me with a closer look at some trends and patterns that are seen in these two cities.
+
+```{r Intake_graph, echo = FALSE}
+shelter_data_intake <- summarize(group_by(shelter_data, Species, Intake), num_reason = n())
+shelter_data_intake <- arrange(shelter_data_intake, Species, desc(num_reason))
+
+ggplot(data = filter(shelter_data_intake, num_reason > 100), mapping = aes(x = Intake, y = num_reason, color = Species)) + geom_count() + theme_dark() + ylab("Count") + xlab("Intake Reason") + ggtitle("Intake Reason Listed by Species") + theme(axis.text.x = element_text(angle = 90), plot.title = element_text(hjust = 0.6)) +  guides(color = "legend", size = "none") + scale_color_brewer(palette="Pastel1") 
+```
+<br>
+The first thing I wanted to do was look at the reason that animals were brought into animal shelters, by species.  In particular, I want to look at dogs and cats, as they are the most common animals found in animal shelters.  We see here that being brought in as strays was the most common reason for both cats and dogs, followed by owner surrender.  For both these two reasons, dogs were take in in greater numbers than cats were.  The next most common reason for dogs was possible owner surrender, and it is likely that these can be combined with the owner surrender category, though it is not definitive.  
+
+```{r Breed_graph, echo = FALSE}
+shelter_data_breed <- group_by(shelter_data, Species, Breed2)
+shelter_data_breed2 <- dplyr::summarize(group_by(filter(shelter_data, Species == "DOG"), Breed2), num_breed = n()) %>% arrange( desc(num_breed))
+
+ggplot(data = filter(shelter_data_breed2, num_breed>2500), mapping = aes(x = Breed2, y  = num_breed)) + geom_bar(stat = "identity") + geom_label(data = filter(shelter_data_breed2, num_breed>2500), aes(label = num_breed)) + xlab("Breed") + ylab("Count") + ggtitle("Number of Dogs in Shelter by Breed") + theme_classic() + theme(plot.title = element_text(hjust = 0.6), axis.text.x = element_text(angle = 90))
+```
+<br>
+The next area I wanted to examine in depth was the breed of dogs that entered the animal shelters.  For both this graph and the previous graph, I was looking at combined data from Los Angeles and Austin.  To my suprise, it is chihuahuas that are the most common breed entered into the shelter.  However, when looking more closely, I see here that American pit bull terrier, American staffordshire terrier, pit bull, and staffordshire are all entered as different breeds, even though they are all types of pitbulls. Accordingly, I decided to further clean the data so that all these different labels were just reflected as pitbulls.  Upon doing so and regraphing the data, we see that now chihuahuas fall into the second most common breed, with pitbulls moving to the front of the pack.  
+
+```{r Breed_graph2, echo = FALSE}
+shelter_data2 <- shelter_data
+shelter_data2$Breed2[shelter_data2$Breed2 =="AMERICAN STAFF"] <- "PIT BULL"
+shelter_data2$Breed2[shelter_data2$Breed2 =="STAFFORDSHIRE"] <- "PIT BULL"
+shelter_data2$Breed2[shelter_data2$Breed2 =="AM PIT BULL TER"] <- "PIT BULL"
+shelter_data2_breed2 <- dplyr::summarize(group_by(filter(shelter_data2, Species == "DOG"), Breed2), num_breed = n()) %>% arrange( desc(num_breed))
+
+ggplot(data = filter(shelter_data2_breed2, num_breed>2500), mapping = aes(x = Breed2, y  = num_breed)) + geom_bar(stat = "identity") + geom_label(data = filter(shelter_data2_breed2, num_breed>2500), aes(label = num_breed)) + xlab("Breed") + ylab("Count") + ggtitle("Number of Dogs in Shelter by Breed") + theme_classic() + theme(plot.title = element_text(hjust = 0.6), axis.text.x = element_text(angle = 90))
+```
+
+<br>
+```{r Color_graph, echo = FALSE}
+austin_data_color <- summarize(group_by(austin_data, Species, Color), num_color = n()) %>% arrange(Species, desc(num_color))
+
+ggplot(data = filter(austin_data_color, num_color > 100), aes(reorder(Color, desc(num_color)),num_color, fill = Species)) +geom_bar(stat = "identity") +
+  ylab("Count") + theme_light() + theme(axis.text.x = element_text(angle = 90), plot.title = element_text(hjust = 0.6)) + ggtitle("Most Common Color by Species") + facet_wrap(~Species) + xlab("Color")
+```
+<br>
+One statement that is often heard about animal shelters is that black cats and dogs are abandoned the most, and have the hardest time getting adopted.  Unfortunately, as I do not have access to adoption rate data, I cannot verify the second half of this statement, but it does appear that when looking at a breakdown by animal in the Austin animal shelters by color, black does appear to be the most common color for both cats and dogs. Without adoption rate statistics, I cannot independently verify this, but this does confirm that there are a large amount of black cats and dogs in the animal shelter.   
+
+```{r Wkday_graph, echo = FALSE}
+LA_data$WkDay <- wday(LA_data$Date, label = TRUE)
+LA_data_WkDay <- dplyr::summarize(group_by(LA_data, WkDay, Species), count = n())
+
+ggplot(data = filter(LA_data_WkDay, Species == "DOG" | Species == "CAT"), aes(WkDay, count)) + geom_bar(stat = "identity") + xlab("Day of the Week") + ggtitle("Animals Entering the Shelter by Days of the Week") + facet_wrap(~Species) + theme(plot.title = element_text(hjust = 0.6)) 
+```
+<br>
+Another analysis that I undertook was looking to see what pattern, if any, there was in the day of week that different species entered into animal shelters.  Interestingly, Tuesdays saw the highest number of both dogs and cats entering into shelters.  Though I do not have data that either supports or refutes my hypothesis, I suspect that many people get new pets over the weekend, and within 2-3 days realize they are in over their head or that pet ownership is not as easy as it seems, and then discard of the animal.  
+
+```{r month_graph, echo = FALSE}
+LA_data$MonofYr <- month(LA_data$Date, label = TRUE)
+LA_data_MonofYr <- dplyr::summarize(group_by(LA_data, MonofYr, Species), count = n())
+
+ggplot(data = filter(LA_data_MonofYr, Species == "DOG" | Species == "CAT"), aes(MonofYr, count)) + geom_bar(stat = "identity") + xlab("Month") + ggtitle("Animals Entering the Shelter by Month of the Year") + facet_wrap(~Species) + theme_light() + theme(plot.title = element_text(hjust = 0.6),axis.text.x = element_text(angle = 90)) + ylab("Count")
+```
+<br>
+I also wanted to conduct a similiar analysis to see if there was a month that was more common for animals to be abandoned.  My initial suspicion was that December or January would be extremely high, if people receive or give animals as holiday presents and then do not want to continue to take care of them once they realize how much work is involved. However, I was suprised to see that for cats, the month with the highest number of animals entering the LA animal shelters was May, and for dogs it was July.  
+
+```{r gender, echo = FALSE}
+austin_data_gender <- dplyr::summarize(group_by(austin_data, Gender), count = n())
+austin_data_gender$total <- colSums(austin_data_gender[1:3,2])
+austin_data_gender$prop <- round(austin_data_gender$count/austin_data_gender$total, digits = 2) *100
+```
+
+I also wanted to see if there was a disproportionatily high rate of either male or female animals abandoned.  However, when looking at the data, it was very close to a 50%-50% split between the genders, with `r austin_data_gender[1,4]`% female and `r austin_data_gender[2,4]`% male, with `r austin_data_gender[3,4]`% gender unknown.  This shows gender is not likely to be playing a huge role in abandonments.  
+
+```{r age_graph, echo = FALSE}
+austin_data_age <- group_by(filter(austin_data, Age > 0),Species) %>%
+  summarize(min_age = min(Age, na.rm = TRUE), max_age = max(Age, na.rm = TRUE), avg_age = mean(Age, na.rm = TRUE))
+austin_data_age2 <- group_by(filter(austin_data, Age > 0),Species)
+
+ggplot(data = austin_data_age2, aes(Species, Age, fill = Species)) + geom_boxplot() + ggtitle("Age of Animals by Species") + theme(plot.title = element_text(hjust = 0.6)) + theme_minimal() + ylab("Age (in Years)")
+```
+<br>
+Another area I wanted to explore was the average age for animals brought into animal shelters.  Only the Austin data had information on age, so I created a boxplot by species for the age information available.  As we can see, the average age was lower for cats than for dogs, at `r round(austin_data_age[1,4], digits = 2)` for cats and `r round(austin_data_age[2,4], digits =2)` for dogs.  However, there was more variation in cats' ages overall, with the oldest age recorded for cats at `r round(austin_data_age[1,3], digits = 2)` versus `r round(austin_data_age[2,3], digits = 2)` for dogs.  
+
+##Shiny App
+
+I have created a shiny app to allow for further exploration of the Austin animal shelter intake data.  One can explore the breakdown by breed, based on color, species, gender, age, and reason that the animals were brought into the shelter.  If the user wishes to search for a particular breed, they can do that as well. This app will allow the user to explore the data in an interactive way, with the ability to modify the search criteria as they see fit.  This shiny app can be accessed at: https://marawood.shinyapps.io/Austin_Animal_Shelter_Intake_2011/
+
+#Conclusion
+
+Though at first I was quite disappointed by my inability to find and access national level animal shelter adoption data, I feel that looking at two large city shelter intake datasets allowed me to analyze and develop some insights into the reasons, breeds, and colors of animals that are brought into animal shelters.  This is an issue that is close at heart to me, and I hope to continue to educate and work to combat misunderstandings about rescue animals so that ideally, one day, there will be no need for animal shelters at all.
